@@ -1,9 +1,12 @@
 import java.awt.Color;
 import java.io.IOException;
+import java.lang.management.ManagementFactory;
+import java.lang.management.MemoryUsage;
 import java.net.SocketException;
 import java.net.UnknownHostException;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
@@ -23,7 +26,9 @@ private Thread t;
 
 private static String IP;
 private int LiczbaPomiarow;
-private int CzestotliwoscPomiarow;
+private static int CzestotliwoscPomiarow;
+private static int SaveToDbInterval;
+private static int RemovalInterval;
 private int Rejestr;
 private int Rejestr2;
 private int Rejestr3;
@@ -31,11 +36,10 @@ private int Rejestr4;  // calkowita moc bierna
 private int Rejestr5; // calkowita moc czynna
 private int Rejestr6;
 private int Offset;
-private String SciezkaDoFolderu;
 static Connection connection=null;
-static ModbusClient modbusClient;
+public static ModbusClient modbusClient;
 
-private String NazwaMaszynyWBazie;
+private static String NazwaMaszynyWBazie;
 
 
 private List<Double> ListaPomiarow = new ArrayList<Double>(); // zgromadzone dane w liscie
@@ -51,21 +55,21 @@ private List<Double> ListaPomiarowActive = new ArrayList<Double>();
 		
 		
 // podstawowy konsturktor dla jednego parametru
-	public Licznik(String Ip, int liczbapomiarow, int czestotliwosc,int rejestr, int offset, String Sciezka, String nazwaMaszynyWBazie,Connection conn)
+	public Licznik(String Ip, int liczbapomiarow, int czestotliwosc,int rejestr, int offset, String nazwaMaszynyWBazie,Connection conn)
 	{
 		IP = Ip;
 		LiczbaPomiarow = liczbapomiarow;
 		CzestotliwoscPomiarow = czestotliwosc;
 		Rejestr = rejestr;
 		Offset = offset;
-		SciezkaDoFolderu = Sciezka;
+	
 		NazwaMaszynyWBazie = nazwaMaszynyWBazie;
 		connection=conn;
 		
 	}
 	
 	// rozszerzony konstruktor dla 3 parametrow
-	public Licznik(String Ip, int liczbapomiarow, int czestotliwosc,int rejestr1,int rejestr2,int rejestr3, int offset, String Sciezka, String nazwaMaszynyWBazie,Connection conn)
+	public Licznik(String Ip, int liczbapomiarow, int czestotliwosc,int rejestr1,int rejestr2,int rejestr3, int offset,  String nazwaMaszynyWBazie,Connection conn)
 	{
 		IP = Ip;
 		LiczbaPomiarow = liczbapomiarow;
@@ -74,16 +78,16 @@ private List<Double> ListaPomiarowActive = new ArrayList<Double>();
 		Rejestr2 = rejestr2;
 		Rejestr3 = rejestr3;
 		Offset = offset;
-		SciezkaDoFolderu = Sciezka;
+	
 		NazwaMaszynyWBazie = nazwaMaszynyWBazie;
 		connection=conn;
 		
 	}
 	//rozszerzony konstrukow dla 6 parametrow
-	public Licznik(String Ip, int liczbapomiarow, int czestotliwosc,int rejestr1,int rejestr2,int rejestr3,int rejestr4,int rejestr5,int rejestr6, int offset, String Sciezka, String nazwaMaszynyWBazie,Connection conn)
+	public Licznik(String Ip, int IntervalToDatabase, int czestotliwosc,int rejestr1,int rejestr2,int rejestr3,int rejestr4,int rejestr5,int rejestr6, int offset,  String nazwaMaszynyWBazie,Connection conn)
 	{
 		IP = Ip;
-		LiczbaPomiarow = liczbapomiarow;
+		SaveToDbInterval = IntervalToDatabase; // 6
 		CzestotliwoscPomiarow = czestotliwosc;
 		Rejestr = rejestr1;
 		Rejestr2 = rejestr2;
@@ -92,9 +96,12 @@ private List<Double> ListaPomiarowActive = new ArrayList<Double>();
 		Rejestr5 = rejestr5;
 		Rejestr6 = rejestr6;
 		Offset = offset;
-		SciezkaDoFolderu = Sciezka;
+		
 		NazwaMaszynyWBazie = nazwaMaszynyWBazie;
 		connection=conn;
+		
+		//SaveToDbInterval = 6;
+		RemovalInterval = 3; // months
 		
 	}
 	
@@ -138,7 +145,7 @@ private List<Double> ListaPomiarowActive = new ArrayList<Double>();
 	}
 	
 	
-	public static String GetIP()
+	public  String GetIP()
 	{
 		return IP;
 	}
@@ -147,10 +154,16 @@ private List<Double> ListaPomiarowActive = new ArrayList<Double>();
 	{
 		return this.LiczbaPomiarow;
 	}
-	public int GetCzestotliwosc()
+	public  int GetCzestotliwosc()
 	{
-		return this.CzestotliwoscPomiarow;
+		return CzestotliwoscPomiarow;
 	}
+	
+	public  int GetSaveToDbInterval()
+	{
+		return SaveToDbInterval;
+	}
+	
 	public int GetRejestr()
 	{
 		return this.Rejestr;
@@ -184,14 +197,15 @@ private List<Double> ListaPomiarowActive = new ArrayList<Double>();
 	{
 		return this.Offset;
 	}
-	public String getPath()
+	
+	public  String GetNazwaWBazie()
 	{
-		return this.SciezkaDoFolderu;
+		return NazwaMaszynyWBazie;
 	}
 	
-	public String GetNazwaWBazie()
+	public  int GetRemovalInterval()
 	{
-		return this.NazwaMaszynyWBazie;
+		return RemovalInterval;
 	}
 	
  public void ConnectToLicznik() throws UnknownHostException, IOException, InterruptedException
@@ -261,6 +275,9 @@ private List<Double> ListaPomiarowActive = new ArrayList<Double>();
 				showConnections.Current_BN25.setText(String.valueOf(Amp));
 				showConnections.Active_BN25.setText(String.valueOf(active));
 				
+				showConnections.collecting_BN25.setForeground(Color.GREEN);
+				showConnections.collecting_BN25.setText("Collecting");
+
 
 				
 				DodajRekordDoListyKWh(kWh_1);
@@ -270,16 +287,23 @@ private List<Double> ListaPomiarowActive = new ArrayList<Double>();
 				DodajRekordDoListyFreq(freq);
 				DodajRekordDoListyPassive(passive);
 				DodajRekordDoListyActive(active);
+				
+				CheckMemoryUsage();
 	
-				if(i%6 ==0) {
-
+				//SaveToDbInterval = 6
+				if(i%SaveToDbInterval ==0) {
+					 
 					 System.out.println("Rozmiary list Przed Wyczyszczeniem: ");
 					 System.out.println("ListaPomiarow: "+ ListaPomiarow.size() + "  ListaPomiarowVolt "+ ListaPomiarowVolt.size() + "ListaPomiarowAmp "+ ListaPomiarowAmp.size()) ;
 
 					this.InsertIntoDatabase6Param(connection);
 					 System.out.println("DOdano rekord do bazy: "+ kWh_1 + " dla: "+ this.getId() + " dla maszyny(w bazie): "+  this.GetNazwaWBazie());
-					
 					 this.CleanLists();  // clean list to release memory( hope its workin)
+					 
+					 // Show last 2 records in Pane
+					 PreparedStatement st =connection.prepareStatement("select ID,Date,Time,PowerConsumption,Voltage,Current from bn25_pr2 order by id desc limit 2");
+					   ResultSet rs = st.executeQuery();
+					   showConnections.resultSetToTableModel(showConnections.table, rs);
 				}
 				 
 				 System.out.println("liczba pomiarow dotychczas: " + this.GetLiczbaPomiarow() + " oraz [i]: +" + i);
@@ -295,11 +319,24 @@ private List<Double> ListaPomiarowActive = new ArrayList<Double>();
 		 showConnections.collecting_BN25.setForeground(Color.RED);
 		 System.out.println("Connection lost");
 		 modbusClient.Disconnect();
+		 
+		showConnections.collecting_BN25.setForeground(Color.RED);
+		showConnections.collecting_BN25.setText("No Collecting");
+
+
 	 }
  }
     
  
- private void CleanLists() {
+ private void CheckMemoryUsage() {
+	// TODO Auto-generated method stub
+	 MemoryUsage heapMemoryUsage = ManagementFactory.getMemoryMXBean().getHeapMemoryUsage();
+	 heapMemoryUsage.getUsed();
+	 System.out.println("HeapMemoryUsage: "+ heapMemoryUsage.getUsed());
+}
+
+
+private void CleanLists() {
 	// TODO Auto-generated method stub
 
 	 this.ListaPomiarow.clear();
@@ -319,7 +356,12 @@ private List<Double> ListaPomiarowActive = new ArrayList<Double>();
     public void run()
     {
 		try {	
-		//	this.DeleteOldRekords();
+			try {
+				this.DeleteOldRekords();
+			} catch (SQLException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}  // usuwa rekordy starsze niz  ' RemovalInterval ' ( w tym przypadku 3 (3 miesiace) )
 			this.ConnectToLicznik();
 		} catch (IOException | InterruptedException e1) {
 			// TODO Auto-generated catch block
@@ -366,7 +408,8 @@ private List<Double> ListaPomiarowActive = new ArrayList<Double>();
 							System.out.println("no connection here - odpalanie rekursywnie run(): ");
 							run();   // finalnie odpala 
 						} catch (IllegalArgumentException e3) {
-							 
+							showConnections.collecting_BN25.setForeground(Color.RED);
+							showConnections.collecting_BN25.setText("No Collecting");
 							// TODO Auto-generated catch block
 							e3.printStackTrace();
 						}
@@ -404,6 +447,10 @@ private List<Double> ListaPomiarowActive = new ArrayList<Double>();
 		} catch (SQLException e) {
 			// TODO Auto-generated catch block
 			System.out.println("no connection here 3");
+			System.out.println("no connection here - odpalanie rekursywnie run(): ");
+			showConnections.collecting_BN25.setForeground(Color.RED);
+			showConnections.collecting_BN25.setText("No Collecting");
+			run();   // finalnie odpala 
 			e.printStackTrace();
 		}
 		
@@ -519,7 +566,7 @@ private List<Double> ListaPomiarowActive = new ArrayList<Double>();
     	// czyszczenie przeprowadzone bedzie raz na uruchomienie programu (na samym poczatku)
     	
     	String query = "null";
-    	query = "DELETE FROM machines.bn25_pr2 WHERE `Date` < (CURDATE() - INTERVAL 3 month)";
+    	query = "DELETE FROM machines.bn25_pr2 WHERE `Date` < (CURDATE() - INTERVAL "+GetRemovalInterval()+" month)";
     	try {
     		PreparedStatement pst=connection.prepareStatement(query);
     		pst.execute();
